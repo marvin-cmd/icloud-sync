@@ -1,5 +1,5 @@
 # --------------------------------------------------------------------------------- #
-# icloud_s3_sync_bot.py - VERSI 5.0 DENGAN KONFIGURASI DI FILE .ENV                 #
+# icloud_s3_sync_bot.py - VERSI 7.0 (FINAL) - Konfigurasi .env & Notifikasi Lengkap #
 # --------------------------------------------------------------------------------- #
 
 import os
@@ -8,37 +8,47 @@ import time
 import logging
 import json
 import boto3
+import requests
 from botocore.exceptions import ClientError
 from pyicloud import PyiCloudService
 from pyicloud.exceptions import PyiCloudFailedLoginException
-from dotenv import load_dotenv  # <-- DITAMBAHKAN
+from dotenv import load_dotenv
 
 # Memuat variabel dari file .env ke dalam environment script
-load_dotenv() # <-- DITAMBAHKAN
+load_dotenv()
 
-# --- 1. KONFIGURASI (Dibaca dari Environment yang dimuat oleh dotenv) ---
+# --- 1. KONFIGURASI (Dibaca dari Environment / .env) ---
 ICLOUD_USERNAME = os.environ.get('ICLOUD_ID')
-ICLOUD_ALBUM_NAME = os.environ.get('ICLOUD_ALBUM_NAME', 'Nikon') # 'Nikon' sebagai default
+ICLOUD_ALBUM_NAME = os.environ.get('ICLOUD_ALBUM_NAME', 'Nikon')
 CREDENTIALS_FILE = os.environ.get('CREDENTIALS_FILE', 'credentials.json')
 COOKIE_DIRECTORY = os.environ.get('COOKIE_DIRECTORY', 'icloud_session')
 DOWNLOAD_PATH = os.environ.get('DOWNLOAD_PATH', 'downloaded_photos')
 PROCESSED_LOG_FILE = os.environ.get('PROCESSED_LOG_FILE', 'processed.log')
-
-# Variabel interval dibaca sebagai string, jadi perlu diubah ke integer
-# Menambahkan nilai default 45 jika tidak ditemukan di .env
 CHECK_INTERVAL_SECONDS = int(os.environ.get('CHECK_INTERVAL_SECONDS', 45))
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-# --- 2. SETUP LOGGING (Tidak ada perubahan) ---
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    stream=sys.stdout,
-)
+# --- 2. SETUP LOGGING ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
 
-# --- FUNGSI-FUNGSI BANTU (Tidak ada perubahan) ---
-# ... (Salin semua fungsi bantu: load_s3_credentials, load_processed_files, save_processed_file, upload_to_s3_compatible, process_new_photos) ...
-# ... dari script versi sebelumnya ke sini. Tidak ada yang perlu diubah di dalam fungsi-fungsi tersebut. ...
+# --- 3. FUNGSI-FUNGSI BANTU ---
+
+def send_telegram_notification(message):
+    """Mengirim pesan notifikasi ke pengguna melalui Telegram."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        logging.warning("Token atau Chat ID Telegram tidak diatur di .env. Melewatkan notifikasi.")
+        return
+    api_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    params = {'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'Markdown'}
+    try:
+        response = requests.post(api_url, data=params, timeout=10)
+        if response.status_code != 200:
+            logging.error(f"Gagal mengirim notifikasi Telegram: {response.text}")
+    except Exception as e:
+        logging.error(f"Terjadi error saat mencoba mengirim notifikasi Telegram: {e}")
+
 def load_s3_credentials(filepath):
+    """Membaca kredensial S3-compatible dari file JSON."""
     try:
         with open(filepath, 'r') as f:
             return json.load(f)
@@ -50,15 +60,19 @@ def load_s3_credentials(filepath):
         return None
 
 def load_processed_files():
-    if not os.path.exists(PROCESSED_LOG_FILE): return set()
+    """Memuat daftar nama file yang sudah diproses dari file log."""
+    if not os.path.exists(PROCESSED_LOG_FILE):
+        return set()
     with open(PROCESSED_LOG_FILE, 'r') as f:
         return set(line.strip() for line in f)
 
 def save_processed_file(filename):
+    """Menyimpan nama file yang baru diproses ke file log."""
     with open(PROCESSED_LOG_FILE, 'a') as f:
         f.write(filename + '\n')
 
 def upload_to_s3_compatible(local_file_path, s3_object_name, credentials):
+    """Mengunggah file ke S3-compatible storage (R2, MinIO, dll)."""
     try:
         s3_client = boto3.client(
             's3',
@@ -80,14 +94,20 @@ def upload_to_s3_compatible(local_file_path, s3_object_name, credentials):
         return False
 
 def process_new_photos(api, processed_files, s3_credentials):
+    """Memeriksa foto baru, memprosesnya, dan mengirim notifikasi status upload."""
     logging.info(f"Mencari album dengan nama: '{ICLOUD_ALBUM_NAME}'...")
     try:
         album = api.photos.albums[ICLOUD_ALBUM_NAME]
     except KeyError:
-        logging.error(f"Album '{ICLOUD_ALBUM_NAME}' tidak ditemukan!")
+        error_msg = f"Album '{ICLOUD_ALBUM_NAME}' tidak ditemukan!"
+        logging.error(error_msg)
+        send_telegram_notification(f"‼️ *ERROR KRITIS*\n\n{error_msg}")
         return
+
     logging.info(f"Album ditemukan. Memeriksa {len(album)} foto...")
     os.makedirs(DOWNLOAD_PATH, exist_ok=True)
+    successfully_uploaded_files = []
+    
     for photo in album:
         if photo.filename not in processed_files:
             logging.info(f"--> FOTO BARU DITEMUKAN: {photo.filename}")
@@ -97,50 +117,78 @@ def process_new_photos(api, processed_files, s3_credentials):
                 download = photo.download('original')
                 with open(local_file_path, 'wb') as f:
                     f.write(download.content)
+                
                 upload_successful = upload_to_s3_compatible(local_file_path, photo.filename, s3_credentials)
+                
                 if upload_successful:
+                    successfully_uploaded_files.append(photo.filename)
                     save_processed_file(photo.filename)
                     processed_files.add(photo.filename)
                     os.remove(local_file_path)
-                    logging.info(f"    File lokal '{photo.filename}' dihapus.")
+                else:
+                    failure_msg = f"⚠️ *Gagal Upload*\n\nFile `{photo.filename}` gagal diunggah ke S3/R2."
+                    logging.warning(failure_msg)
+                    send_telegram_notification(failure_msg)
+            
             except Exception as e:
-                logging.error(f"    Gagal memproses {photo.filename}: {e}")
+                error_msg = f"‼️ *Error Proses*\n\nTerjadi error saat memproses file `{photo.filename}`: `{e}`"
+                logging.error(error_msg)
+                send_telegram_notification(error_msg)
 
-# --- 5. BAGIAN EKSEKUSI SCRIPT (Tidak ada perubahan logika) ---
+    if successfully_uploaded_files:
+        count = len(successfully_uploaded_files)
+        success_msg = f"✅ *Sinkronisasi Berhasil*\n\nTelah mengunggah *{count}* foto baru."
+        if count <= 5:
+            filenames_str = "\n- `".join(successfully_uploaded_files)
+            success_msg += f"\n\nFile yang diunggah:\n- `{filenames_str}`"
+        logging.info(success_msg)
+        send_telegram_notification(success_msg)
+
+# --- 4. BAGIAN EKSEKUSI UTAMA SCRIPT ---
 if __name__ == "__main__":
     logging.info("Memulai script iCloud S3-Compatible Sync Bot...")
-    
+    send_telegram_notification("🚀 *iCloud Sync Bot Dimulai*\n\nScript sedang berjalan dan akan memulai proses sinkronisasi.")
+
     s3_creds = load_s3_credentials(CREDENTIALS_FILE)
     if not s3_creds:
+        send_telegram_notification(f"‼️ *ERROR KRITIS*\n\nGagal memuat kredensial dari `{CREDENTIALS_FILE}`. Script berhenti.")
         sys.exit(1)
-    logging.info(f"Kredensial untuk '{s3_creds['provider']}' berhasil dimuat. Target bucket: {s3_creds['bucket']}")
     
     if not ICLOUD_USERNAME:
-        logging.error("Harap atur ICLOUD_ID di file .env")
+        error_msg = "ICLOUD_ID tidak diatur di file .env"
+        logging.error(error_msg)
+        send_telegram_notification(f"‼️ *ERROR KRITIS*\n\n{error_msg}")
         sys.exit(1)
-    
+
     logging.info(f"Menggunakan Apple ID: {ICLOUD_USERNAME}")
-    
     os.makedirs(COOKIE_DIRECTORY, exist_ok=True)
+    
     try:
         api = PyiCloudService(ICLOUD_USERNAME, cookie_directory=COOKIE_DIRECTORY)
     except PyiCloudFailedLoginException as e:
-        logging.error(f"Login iCloud Gagal! Error: {e}")
+        error_msg = f"Login iCloud Gagal! Periksa kredensial di Keychain. Error: {e}"
+        logging.error(error_msg)
+        send_telegram_notification(f"‼️ *ERROR KRITIS*\n\n{error_msg}")
         sys.exit(1)
 
     if api.requires_2fa:
         logging.info("Otentikasi Dua Faktor (2FA) dibutuhkan.")
         code = input("Masukkan kode 6 digit: ")
         if not api.validate_2fa_code(code):
-            logging.error("Kode 2FA salah.")
+            error_msg = "Kode 2FA salah."
+            logging.error(error_msg)
+            send_telegram_notification(f"‼️ *ERROR KRITIS*\n\n{error_msg} Script berhenti.")
             sys.exit(1)
 
     if not api.is_trusted_session:
-        logging.error("Login iCloud gagal atau sesi tidak terpercaya.")
+        error_msg = "Login iCloud gagal atau sesi tidak terpercaya."
+        logging.error(error_msg)
+        send_telegram_notification(f"‼️ *ERROR KRITIS*\n\n{error_msg} Script berhenti.")
         sys.exit(1)
+    
     logging.info("Login ke iCloud berhasil via Keychain dan/atau Sesi.")
-
     processed_files = load_processed_files()
+
     try:
         while True:
             process_new_photos(api, processed_files, s3_creds)
@@ -148,4 +196,8 @@ if __name__ == "__main__":
             time.sleep(CHECK_INTERVAL_SECONDS)
     except KeyboardInterrupt:
         logging.info("Script dihentikan oleh pengguna.")
-        sys.exit(0)
+        send_telegram_notification("👋 *iCloud Sync Bot Dihentikan*\n\nScript dihentikan secara manual oleh pengguna.")
+    except Exception as e:
+        error_msg = f"Terjadi error tak terduga di loop utama: {e}"
+        logging.critical(error_msg)
+        send_telegram_notification(f"‼️ *ERROR KRITIS*\n\n{error_msg}\n\nScript akan berhenti.")
