@@ -1,0 +1,21 @@
+<%- include('partials/header', { title: title }) %>
+
+<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 pb-4 border-b border-slate-200">
+    <div>
+        <h1 class="text-3xl font-bold text-brand-text font-display">Admin Dashboard</h1>
+        <p class="text-slate-500 mt-1">Manajemen Pricelist Hafi Portrait</p>
+    </div>
+    <a href="/logout" class="btn-logout mt-4 sm:mt-0 inline-flex items-center px-4 py-2 bg-red-500 text-white font-semibold text-sm rounded-lg shadow-sm hover:bg-red-600 transition-colors duration-300">
+        <i class="bi bi-box-arrow-right mr-2"></i>
+        <span>Logout</span>
+    </a>
+</div>
+
+<div class="flex justify-end mb-4">
+    <a href="/admin/packages/add" class="inline-flex items-center px-4 py-2 bg-brand-accent text-white font-bold text-sm rounded-lg shadow-sm hover:bg-brand-accent-hover transition-transform hover:scale-105 duration-300">
+        <i class="bi bi-plus-circle-fill mr-2"></i>
+        <span>Tambah Paket Baru</span>
+    </a>
+</div>
+
+<%- include('partials/footer') %>

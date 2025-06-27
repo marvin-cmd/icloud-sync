@@ -1,0 +1,55 @@
+<%- include('partials/header', { title: "Galeri Foto - Hafi Portrait" }) %>
+
+<div class="text-center mb-12" data-aos="fade-down">
+    <h1 class="text-5xl font-bold tracking-tight font-playfair text-slate-900">Galeri Foto</h1>
+    <p class="text-lg text-slate-600 mt-2">Momen-momen berharga yang telah kami abadikan.</p>
+</div>
+
+<div class="max-w-7xl mx-auto px-4">
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" id="gallery-grid">
+        <% if (images.length > 0) { %>
+            <% images.forEach((image, index) => { %>
+                <a href="<%= image.url %>" 
+                   data-pswp-width="1800" 
+                   data-pswp-height="1200" 
+                   rel="noreferrer"
+                   class="group block relative overflow-hidden rounded-lg shadow-lg"
+                   data-aos="zoom-in-up"
+                   data-aos-delay="<%= index * 50 %>">
+                    
+                    <img src="<%= image.url %>" alt="<%= image.filename %>" loading="lazy" class="w-full h-full object-cover aspect-square transition-transform duration-300 group-hover:scale-110">
+                    
+                    <div class="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <a download href="<%= image.url %>" class="bg-black bg-opacity-50 text-white p-2 rounded-full inline-block backdrop-blur-sm hover:bg-opacity-75" title="Download gambar ini">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16">
+                                <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                                <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+                            </svg>
+                        </a>
+                    </div>
+                </a>
+            <% }); %>
+        <% } else { %>
+            <p class="col-span-full text-center text-slate-500 py-10">Galeri masih kosong. Foto-foto baru akan segera tampil di sini!</p>
+        <% } %>
+    </div>
+</div>
+
+<script type="module">
+    // Impor PhotoSwipe
+    import PhotoSwipeLightbox from 'https://unpkg.com/photoswipe@5/dist/photoswipe-lightbox.esm.js';
+
+    // Inisialisasi PhotoSwipe
+    const lightbox = new PhotoSwipeLightbox({
+        gallery: '#gallery-grid', // Target galeri kita
+        children: 'a',           // Cari semua link <a> di dalamnya
+        // Modul PhotoSwipe inti
+        pswpModule: () => import('https://unpkg.com/photoswipe@5/dist/photoswipe.esm.js')
+    });
+
+    // Mulai PhotoSwipe
+    lightbox.init();
+</script>
+
+
+<%- include('partials/footer') %>

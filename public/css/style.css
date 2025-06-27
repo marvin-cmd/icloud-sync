@@ -1,0 +1,13 @@
+body {
+    font-family: 'Montserrat', sans-serif;
+}
+
+.price-card {
+    transition: all 0.3s ease-in-out;
+    border-radius: 15px !important; /* Membuat sudut lebih tumpul */
+}
+
+.price-card:hover {
+    transform: translateY(-10px);
+    box-shadow: 0 1rem 3rem rgba(0,0,0,.175) !important;
+}

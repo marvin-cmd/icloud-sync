@@ -27,6 +27,7 @@ PROCESSED_LOG_FILE = os.environ.get('PROCESSED_LOG_FILE', 'processed.log')
 CHECK_INTERVAL_SECONDS = int(os.environ.get('CHECK_INTERVAL_SECONDS', 45))
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+R2_PUBLIC_URL = os.environ.get('R2_PUBLIC_URL')
 
 # --- 2. SETUP LOGGING ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -129,6 +130,15 @@ def process_new_photos(api, processed_files, s3_credentials):
                     failure_msg = f"⚠️ *Gagal Upload*\n\nFile `{photo.filename}` gagal diunggah ke S3/R2."
                     logging.warning(failure_msg)
                     send_telegram_notification(failure_msg)
+                    # KIRIM SINYAL KE SERVER NODE.JS
+                    if R2_PUBLIC_URL:
+                        try:
+                            photo_url = f"{R2_PUBLIC_URL}/{photo.filename}"
+                            notification_url = "http://localhost:3000/notify-new-photo" # Endpoint di Node.js
+                            requests.post(notification_url, json={"url": photo_url, "filename": photo.filename}, timeout=5)
+                            logging.info(f"    Sinyal foto baru untuk '{photo.filename}' telah dikirim ke server Node.js.")
+                        except Exception as e:
+                            logging.error(f"    Gagal mengirim sinyal ke server Node.js: {e}")
             
             except Exception as e:
                 error_msg = f"‼️ *Error Proses*\n\nTerjadi error saat memproses file `{photo.filename}`: `{e}`"
